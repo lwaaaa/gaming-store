@@ -1,6 +1,7 @@
 from flask import Blueprint, jsonify, request
 from datetime import datetime
 from src.models.user import db
+from src.telegram_bot import telegram_bot, TELEGRAM_CHAT_ID
 
 orders_bp = Blueprint('orders', __name__)
 
@@ -16,32 +17,54 @@ def create_order():
     try:
         data = request.get_json()
         
-        # Validate required fields
-        required_fields = ['customer_name', 'customer_email', 'customer_phone', 'items', 'total_amount']
-        for field in required_fields:
-            if field not in data:
-                return jsonify({
-                    'success': False,
-                    'message': f'Missing required field: {field}'
-                }), 400
+        # Extract customer info and items
+        customer_info = data.get('customer_info', {})
+        items = data.get('items', [])
+        total = data.get('total', 0)
+        user_id = data.get('user_id')
         
-        # Validate items
-        if not data['items'] or len(data['items']) == 0:
+        # Validate required fields
+        if not customer_info.get('name'):
             return jsonify({
                 'success': False,
-                'message': 'Order must contain at least one item'
+                'message': 'اسم العميل مطلوب'
+            }), 400
+        
+        if not customer_info.get('email'):
+            return jsonify({
+                'success': False,
+                'message': 'البريد الإلكتروني مطلوب'
+            }), 400
+        
+        if not customer_info.get('phone'):
+            return jsonify({
+                'success': False,
+                'message': 'رقم الهاتف مطلوب'
+            }), 400
+        
+        if not items or len(items) == 0:
+            return jsonify({
+                'success': False,
+                'message': 'يجب أن يحتوي الطلب على منتج واحد على الأقل'
+            }), 400
+        
+        if total <= 0:
+            return jsonify({
+                'success': False,
+                'message': 'المبلغ الإجمالي يجب أن يكون أكبر من صفر'
             }), 400
         
         # Create order
         order = {
             'id': ORDER_COUNTER,
             'order_number': f'GO-{ORDER_COUNTER:06d}',
-            'customer_name': data['customer_name'],
-            'customer_email': data['customer_email'],
-            'customer_phone': data['customer_phone'],
-            'customer_address': data.get('customer_address', ''),
-            'items': data['items'],
-            'total_amount': data['total_amount'],
+            'user_id': user_id,
+            'customer_name': customer_info['name'],
+            'customer_email': customer_info['email'],
+            'customer_phone': customer_info['phone'],
+            'customer_address': customer_info.get('address', ''),
+            'items': items,
+            'total_amount': total,
             'status': 'pending',
             'payment_method': data.get('payment_method', 'cash_on_delivery'),
             'notes': data.get('notes', ''),
@@ -52,27 +75,43 @@ def create_order():
         ORDERS_DATA.append(order)
         ORDER_COUNTER += 1
         
+        # Send Telegram notification
+        if telegram_bot and TELEGRAM_CHAT_ID != "YOUR_CHAT_ID_HERE":
+            try:
+                telegram_bot.send_order_notification(TELEGRAM_CHAT_ID, {
+                    'customer_info': customer_info,
+                    'items': items,
+                    'total': total,
+                    'order_number': order['order_number']
+                })
+            except Exception as e:
+                print(f"Failed to send Telegram notification: {e}")
+        
         return jsonify({
             'success': True,
-            'message': 'Order created successfully',
+            'message': 'تم إنشاء الطلب بنجاح',
             'order': order
         }), 201
         
     except Exception as e:
         return jsonify({
             'success': False,
-            'message': f'Error creating order: {str(e)}'
+            'message': f'حدث خطأ في إنشاء الطلب: {str(e)}'
         }), 500
 
 @orders_bp.route('/orders', methods=['GET'])
 def get_orders():
     """Get all orders (admin endpoint)"""
     status_filter = request.args.get('status')
+    user_id = request.args.get('user_id')
     
     orders = ORDERS_DATA.copy()
     
     if status_filter:
         orders = [order for order in orders if order['status'] == status_filter]
+    
+    if user_id:
+        orders = [order for order in orders if order.get('user_id') == int(user_id)]
     
     # Sort by creation date (newest first)
     orders.sort(key=lambda x: x['created_at'], reverse=True)
@@ -91,7 +130,7 @@ def get_order(order_id):
     if not order:
         return jsonify({
             'success': False,
-            'message': 'Order not found'
+            'message': 'الطلب غير موجود'
         }), 404
     
     return jsonify({
@@ -109,14 +148,14 @@ def update_order_status(order_id):
         if not new_status:
             return jsonify({
                 'success': False,
-                'message': 'Status is required'
+                'message': 'حالة الطلب مطلوبة'
             }), 400
         
         valid_statuses = ['pending', 'confirmed', 'processing', 'shipped', 'delivered', 'cancelled']
         if new_status not in valid_statuses:
             return jsonify({
                 'success': False,
-                'message': f'Invalid status. Valid statuses: {", ".join(valid_statuses)}'
+                'message': f'حالة غير صحيحة. الحالات المتاحة: {", ".join(valid_statuses)}'
             }), 400
         
         order = next((order for order in ORDERS_DATA if order['id'] == order_id), None)
@@ -124,7 +163,7 @@ def update_order_status(order_id):
         if not order:
             return jsonify({
                 'success': False,
-                'message': 'Order not found'
+                'message': 'الطلب غير موجود'
             }), 404
         
         order['status'] = new_status
@@ -132,14 +171,14 @@ def update_order_status(order_id):
         
         return jsonify({
             'success': True,
-            'message': 'Order status updated successfully',
+            'message': 'تم تحديث حالة الطلب بنجاح',
             'order': order
         })
         
     except Exception as e:
         return jsonify({
             'success': False,
-            'message': f'Error updating order status: {str(e)}'
+            'message': f'حدث خطأ في تحديث حالة الطلب: {str(e)}'
         }), 500
 
 @orders_bp.route('/orders/search', methods=['GET'])
@@ -150,7 +189,7 @@ def search_orders():
     if not query:
         return jsonify({
             'success': False,
-            'message': 'Search query is required'
+            'message': 'استعلام البحث مطلوب'
         }), 400
     
     results = [
@@ -191,48 +230,44 @@ def get_order_stats():
         }
     })
 
-@orders_bp.route('/orders/validate', methods=['POST'])
-def validate_order():
-    """Validate order data before submission"""
+@orders_bp.route('/contact', methods=['POST'])
+def contact_form():
+    """Handle contact form submissions"""
     try:
         data = request.get_json()
         
-        errors = []
+        # Validate required fields
+        required_fields = ['name', 'email', 'message']
+        for field in required_fields:
+            if not data.get(field):
+                return jsonify({
+                    'success': False,
+                    'message': f'حقل {field} مطلوب'
+                }), 400
         
-        # Validate customer info
-        if not data.get('customer_name'):
-            errors.append('Customer name is required')
+        contact_data = {
+            'name': data['name'],
+            'email': data['email'],
+            'phone': data.get('phone', ''),
+            'message': data['message'],
+            'created_at': datetime.now().isoformat()
+        }
         
-        if not data.get('customer_email'):
-            errors.append('Customer email is required')
-        elif '@' not in data['customer_email']:
-            errors.append('Invalid email format')
-        
-        if not data.get('customer_phone'):
-            errors.append('Customer phone is required')
-        
-        # Validate items
-        if not data.get('items') or len(data['items']) == 0:
-            errors.append('Order must contain at least one item')
-        
-        # Validate total amount
-        if not data.get('total_amount') or data['total_amount'] <= 0:
-            errors.append('Total amount must be greater than 0')
-        
-        if errors:
-            return jsonify({
-                'success': False,
-                'errors': errors
-            }), 400
+        # Send Telegram notification
+        if telegram_bot and TELEGRAM_CHAT_ID != "YOUR_CHAT_ID_HERE":
+            try:
+                telegram_bot.send_contact_message(TELEGRAM_CHAT_ID, contact_data)
+            except Exception as e:
+                print(f"Failed to send Telegram notification: {e}")
         
         return jsonify({
             'success': True,
-            'message': 'Order data is valid'
-        })
+            'message': 'تم إرسال رسالتك بنجاح. سنتواصل معك قريباً!'
+        }), 200
         
     except Exception as e:
         return jsonify({
             'success': False,
-            'message': f'Validation error: {str(e)}'
+            'message': f'حدث خطأ في إرسال الرسالة: {str(e)}'
         }), 500
 

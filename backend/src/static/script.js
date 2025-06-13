@@ -3,12 +3,15 @@
 // Cart functionality
 let cart = [];
 let cartTotal = 0;
+let currentUser = null;
 
 // Initialize the application
 document.addEventListener("DOMContentLoaded", function() {
     initializeEventListeners();
     loadCartFromStorage();
+    loadUserFromStorage();
     updateCartDisplay();
+    updateUserDisplay();
     loadProducts(); // Load games and accessories on page load
 });
 
@@ -25,6 +28,166 @@ function initializeEventListeners() {
     if (ctaButton) {
         ctaButton.addEventListener("click", scrollToGames);
     }
+
+    // Login/Register modals
+    const loginBtn = document.getElementById("login-btn");
+    const cartBtn = document.getElementById("cart-btn");
+    const loginModal = document.getElementById("login-modal");
+    const registerModal = document.getElementById("register-modal");
+    const loginForm = document.getElementById("login-form");
+    const registerForm = document.getElementById("register-form");
+    const registerLink = document.getElementById("register-link");
+    const loginLink = document.getElementById("login-link");
+
+    // Modal event listeners
+    loginBtn.addEventListener("click", () => {
+        if (currentUser) {
+            logout();
+        } else {
+            showModal(loginModal);
+        }
+    });
+
+    cartBtn.addEventListener("click", showCart);
+
+    registerLink.addEventListener("click", (e) => {
+        e.preventDefault();
+        hideModal(loginModal);
+        showModal(registerModal);
+    });
+
+    loginLink.addEventListener("click", (e) => {
+        e.preventDefault();
+        hideModal(registerModal);
+        showModal(loginModal);
+    });
+
+    // Close modals
+    document.querySelectorAll(".close").forEach(closeBtn => {
+        closeBtn.addEventListener("click", (e) => {
+            hideModal(e.target.closest(".modal"));
+        });
+    });
+
+    // Close modal on background click
+    document.querySelectorAll(".modal").forEach(modal => {
+        modal.addEventListener("click", (e) => {
+            if (e.target === modal) {
+                hideModal(modal);
+            }
+        });
+    });
+
+    // Form submissions
+    loginForm.addEventListener("submit", handleLogin);
+    registerForm.addEventListener("submit", handleRegister);
+}
+
+// User authentication functions
+async function handleLogin(e) {
+    e.preventDefault();
+    const formData = new FormData(e.target);
+    const loginData = {
+        email: formData.get("email"),
+        password: formData.get("password")
+    };
+
+    try {
+        const response = await fetch("/api/users/login", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify(loginData)
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+            currentUser = result.user;
+            saveUserToStorage();
+            updateUserDisplay();
+            hideModal(document.getElementById("login-modal"));
+            showNotification("تم تسجيل الدخول بنجاح!", "success");
+        } else {
+            showNotification(result.message || "فشل في تسجيل الدخول", "error");
+        }
+    } catch (error) {
+        showNotification("حدث خطأ في الاتصال", "error");
+    }
+}
+
+async function handleRegister(e) {
+    e.preventDefault();
+    const formData = new FormData(e.target);
+    const registerData = {
+        name: formData.get("name"),
+        email: formData.get("email"),
+        password: formData.get("password"),
+        phone: formData.get("phone")
+    };
+
+    try {
+        const response = await fetch("/api/users/register", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify(registerData)
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+            currentUser = result.user;
+            saveUserToStorage();
+            updateUserDisplay();
+            hideModal(document.getElementById("register-modal"));
+            showNotification("تم إنشاء الحساب بنجاح!", "success");
+        } else {
+            showNotification(result.message || "فشل في إنشاء الحساب", "error");
+        }
+    } catch (error) {
+        showNotification("حدث خطأ في الاتصال", "error");
+    }
+}
+
+function logout() {
+    currentUser = null;
+    localStorage.removeItem("gamingStoreUser");
+    updateUserDisplay();
+    showNotification("تم تسجيل الخروج بنجاح!", "success");
+}
+
+function saveUserToStorage() {
+    localStorage.setItem("gamingStoreUser", JSON.stringify(currentUser));
+}
+
+function loadUserFromStorage() {
+    const savedUser = localStorage.getItem("gamingStoreUser");
+    if (savedUser) {
+        currentUser = JSON.parse(savedUser);
+    }
+}
+
+function updateUserDisplay() {
+    const loginBtn = document.getElementById("login-btn");
+    if (currentUser) {
+        loginBtn.textContent = `مرحباً ${currentUser.name} | تسجيل الخروج`;
+        loginBtn.classList.add("logged-in");
+    } else {
+        loginBtn.textContent = "تسجيل الدخول";
+        loginBtn.classList.remove("logged-in");
+    }
+}
+
+// Modal functions
+function showModal(modal) {
+    modal.style.display = "flex";
+}
+
+function hideModal(modal) {
+    modal.style.display = "none";
 }
 
 // Load products (games and accessories)
@@ -33,25 +196,33 @@ async function loadProducts() {
     const accessoriesContainer = document.getElementById("accessories-container");
 
     // Fetch games
-    const gamesResponse = await fetch("/api/games");
-    if (gamesResponse.ok) {
-        const gamesData = await gamesResponse.json();
-        if (gamesData.success) {
-            gamesData.games.forEach(game => {
-                gamesContainer.innerHTML += createProductCard(game, "game");
-            });
+    try {
+        const gamesResponse = await fetch("/api/games");
+        if (gamesResponse.ok) {
+            const gamesData = await gamesResponse.json();
+            if (gamesData.success) {
+                gamesData.games.forEach(game => {
+                    gamesContainer.innerHTML += createProductCard(game, "game");
+                });
+            }
         }
+    } catch (error) {
+        console.error("Error loading games:", error);
     }
 
     // Fetch accessories
-    const accessoriesResponse = await fetch("/api/accessories");
-    if (accessoriesResponse.ok) {
-        const accessoriesData = await accessoriesResponse.json();
-        if (accessoriesData.success) {
-            accessoriesData.accessories.forEach(accessory => {
-                accessoriesContainer.innerHTML += createProductCard(accessory, "accessory");
-            });
+    try {
+        const accessoriesResponse = await fetch("/api/accessories");
+        if (accessoriesResponse.ok) {
+            const accessoriesData = await accessoriesResponse.json();
+            if (accessoriesData.success) {
+                accessoriesData.accessories.forEach(accessory => {
+                    accessoriesContainer.innerHTML += createProductCard(accessory, "accessory");
+                });
+            }
         }
+    } catch (error) {
+        console.error("Error loading accessories:", error);
     }
 
     // Add to cart buttons after products are loaded
@@ -59,13 +230,16 @@ async function loadProducts() {
     addToCartButtons.forEach(button => {
         button.addEventListener("click", handleAddToCart);
     });
+
+    // Animate products
+    animateProducts();
 }
 
 // Create product card HTML
 function createProductCard(product, type) {
     return `
         <div class="product-card ${type}-card">
-            <img src="/static/${product.image}" alt="${product.name}">
+            <img src="/static/${product.image}" alt="${product.name}" onerror="this.src='/static/placeholder.jpg'">
             <h3>${product.name}</h3>
             <p class="price">${product.price} ريال</p>
             <button class="add-to-cart" data-id="${product.id}" data-type="${type}">أضف إلى السلة</button>
@@ -144,32 +318,8 @@ function loadCartFromStorage() {
 
 // Update cart display
 function updateCartDisplay() {
-    const cartIcon = document.querySelector(".fa-shopping-cart"); // Assuming you have a cart icon
-    if (cartIcon && cart.length > 0) {
-        // Add cart count badge
-        let badge = cartIcon.nextElementSibling;
-        if (!badge || !badge.classList.contains("cart-badge")) {
-            badge = document.createElement("span");
-            badge.classList.add("cart-badge");
-            cartIcon.parentNode.insertBefore(badge, cartIcon.nextSibling);
-        }
-        badge.textContent = cart.length;
-        badge.style.cssText = `
-            position: absolute;
-            top: -5px;
-            right: -5px;
-            background: #ff4757;
-            color: white;
-            border-radius: 50%;
-            width: 20px;
-            height: 20px;
-            font-size: 12px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-weight: bold;
-        `;
-    }
+    const cartCount = document.getElementById("cart-count");
+    cartCount.textContent = cart.length;
 }
 
 // Show cart
@@ -210,17 +360,53 @@ function showCart() {
     `;
     cartHTML += `</div>`;
     
-    showModal(cartHTML);
+    showModalContent(cartHTML);
 }
 
 // Checkout function
-function checkout() {
-    showNotification("شكراً لك! سيتم التواصل معك قريباً لإتمام الطلب.", "success");
-    cart = [];
-    cartTotal = 0;
-    saveCartToStorage();
-    updateCartDisplay();
-    closeModal();
+async function checkout() {
+    if (!currentUser) {
+        showNotification("يرجى تسجيل الدخول أولاً لإتمام الشراء", "error");
+        closeModalContent();
+        showModal(document.getElementById("login-modal"));
+        return;
+    }
+
+    const orderData = {
+        user_id: currentUser.id,
+        items: cart,
+        total: cartTotal,
+        customer_info: {
+            name: currentUser.name,
+            email: currentUser.email,
+            phone: currentUser.phone
+        }
+    };
+
+    try {
+        const response = await fetch("/api/orders", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify(orderData)
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+            showNotification("تم إرسال طلبك بنجاح! سيتم التواصل معك قريباً.", "success");
+            cart = [];
+            cartTotal = 0;
+            saveCartToStorage();
+            updateCartDisplay();
+            closeModalContent();
+        } else {
+            showNotification(result.message || "فشل في إرسال الطلب", "error");
+        }
+    } catch (error) {
+        showNotification("حدث خطأ في الاتصال", "error");
+    }
 }
 
 // Handle smooth scrolling
@@ -295,8 +481,8 @@ function showNotification(message, type = "info") {
     }, 3000);
 }
 
-// Show modal
-function showModal(content) {
+// Show modal content
+function showModalContent(content) {
     const modal = document.createElement("div");
     modal.style.cssText = `
         position: fixed;
@@ -313,41 +499,50 @@ function showModal(content) {
     
     modal.innerHTML = `
         <div style="position: relative;">
-            <button onclick="closeModal()" style="position: absolute; top: -10px; right: -10px; background: #ff4757; color: white; border: none; border-radius: 50%; width: 30px; height: 30px; cursor: pointer; font-weight: bold;">×</button>
+            <button onclick="closeModalContent()" style="position: absolute; top: -10px; right: -10px; background: #ff4757; color: white; border: none; border-radius: 50%; width: 30px; height: 30px; cursor: pointer; font-weight: bold;">×</button>
             ${content}
         </div>
     `;
     
-    modal.id = "modal";
+    modal.id = "modal-content";
     document.body.appendChild(modal);
     
     // Close on background click
     modal.addEventListener("click", (e) => {
         if (e.target === modal) {
-            closeModal();
+            closeModalContent();
         }
     });
 }
 
-// Close modal
-function closeModal() {
-    const modal = document.getElementById("modal");
+// Close modal content
+function closeModalContent() {
+    const modal = document.getElementById("modal-content");
     if (modal) {
         document.body.removeChild(modal);
     }
 }
 
+// Animate products
+function animateProducts() {
+    const products = document.querySelectorAll(".product-card");
+    products.forEach((product, index) => {
+        setTimeout(() => {
+            product.classList.add("visible");
+        }, index * 100);
+    });
+}
+
 // Scroll animations
 function animateOnScroll() {
-    const elements = document.querySelectorAll(".product-card");
+    const elements = document.querySelectorAll(".product-card:not(.visible)");
     
     elements.forEach(element => {
         const elementTop = element.getBoundingClientRect().top;
         const elementVisible = 150;
         
         if (elementTop < window.innerHeight - elementVisible) {
-            element.style.opacity = "1";
-            element.style.transform = "translateY(0)";
+            element.classList.add("visible");
         }
     });
 }
@@ -359,60 +554,5 @@ window.addEventListener("scroll", animateOnScroll);
 window.addEventListener("load", () => {
     animateOnScroll();
 });
-
-// API Integration
-const API_BASE_URL = window.location.origin.includes("localhost") 
-    ? "http://localhost:5000/api" 
-    : "https://gaming-store-00fk.onrender.com/api"; // Updated Render URL
-
-// Fetch games from backend
-async function fetchGames() {
-    try {
-        const response = await fetch(`${API_BASE_URL}/games`);
-        if (response.ok) {
-            const games = await response.json();
-            return games;
-        }
-    } catch (error) {
-        console.error("Error fetching games:", error);
-    }
-    return { success: false, games: [] };
-}
-
-// Fetch accessories from backend
-async function fetchAccessories() {
-    try {
-        const response = await fetch(`${API_BASE_URL}/accessories`);
-        if (response.ok) {
-            const accessories = await response.json();
-            return accessories;
-        }
-    } catch (error) {
-        console.error("Error fetching accessories:", error);
-    }
-    return { success: false, accessories: [] };
-}
-
-// Submit order to backend
-async function submitOrder(orderData) {
-    try {
-        const response = await fetch(`${API_BASE_URL}/orders`, {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-            },
-            body: JSON.stringify(orderData)
-        });
-        
-        if (response.ok) {
-            const result = await response.json();
-            return result;
-        }
-    } catch (error) {
-        console.error("Error submitting order:", error);
-    }
-    return { success: false, message: "Failed to submit order" };
-}
-
 
 
