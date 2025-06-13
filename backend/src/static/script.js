@@ -5,66 +5,92 @@ let cart = [];
 let cartTotal = 0;
 
 // Initialize the application
-document.addEventListener('DOMContentLoaded', function() {
+document.addEventListener("DOMContentLoaded", function() {
     initializeEventListeners();
     loadCartFromStorage();
     updateCartDisplay();
+    loadProducts(); // Load games and accessories on page load
 });
 
 // Initialize event listeners
 function initializeEventListeners() {
-    // Add to cart buttons
-    const addToCartButtons = document.querySelectorAll('.add-to-cart');
-    addToCartButtons.forEach(button => {
-        button.addEventListener('click', handleAddToCart);
-    });
-
     // Navigation smooth scrolling
-    const navLinks = document.querySelectorAll('.nav-menu a');
+    const navLinks = document.querySelectorAll("header nav ul li a");
     navLinks.forEach(link => {
-        link.addEventListener('click', handleSmoothScroll);
+        link.addEventListener("click", handleSmoothScroll);
     });
-
-    // Search functionality
-    const searchIcon = document.querySelector('.fa-search');
-    if (searchIcon) {
-        searchIcon.addEventListener('click', handleSearch);
-    }
-
-    // Cart icon click
-    const cartIcon = document.querySelector('.fa-shopping-cart');
-    if (cartIcon) {
-        cartIcon.addEventListener('click', showCart);
-    }
-
-    // User icon click
-    const userIcon = document.querySelector('.fa-user');
-    if (userIcon) {
-        userIcon.addEventListener('click', handleUserLogin);
-    }
 
     // CTA button
-    const ctaButton = document.querySelector('.cta-button');
+    const ctaButton = document.querySelector(".hero .btn");
     if (ctaButton) {
-        ctaButton.addEventListener('click', scrollToGames);
+        ctaButton.addEventListener("click", scrollToGames);
     }
+}
+
+// Load products (games and accessories)
+async function loadProducts() {
+    const gamesContainer = document.getElementById("games-container");
+    const accessoriesContainer = document.getElementById("accessories-container");
+
+    // Fetch games
+    const gamesResponse = await fetch("/api/games");
+    if (gamesResponse.ok) {
+        const gamesData = await gamesResponse.json();
+        if (gamesData.success) {
+            gamesData.games.forEach(game => {
+                gamesContainer.innerHTML += createProductCard(game, "game");
+            });
+        }
+    }
+
+    // Fetch accessories
+    const accessoriesResponse = await fetch("/api/accessories");
+    if (accessoriesResponse.ok) {
+        const accessoriesData = await accessoriesResponse.json();
+        if (accessoriesData.success) {
+            accessoriesData.accessories.forEach(accessory => {
+                accessoriesContainer.innerHTML += createProductCard(accessory, "accessory");
+            });
+        }
+    }
+
+    // Add to cart buttons after products are loaded
+    const addToCartButtons = document.querySelectorAll(".add-to-cart");
+    addToCartButtons.forEach(button => {
+        button.addEventListener("click", handleAddToCart);
+    });
+}
+
+// Create product card HTML
+function createProductCard(product, type) {
+    return `
+        <div class="product-card ${type}-card">
+            <img src="/static/${product.image}" alt="${product.name}">
+            <h3>${product.name}</h3>
+            <p class="price">${product.price} ريال</p>
+            <button class="add-to-cart" data-id="${product.id}" data-type="${type}">أضف إلى السلة</button>
+        </div>
+    `;
 }
 
 // Handle add to cart
 function handleAddToCart(event) {
     const button = event.target;
-    const card = button.closest('.game-card, .accessory-card');
+    const card = button.closest(".product-card");
     
     if (card) {
-        const name = card.querySelector('h3').textContent;
-        const priceText = card.querySelector('.price').textContent;
-        const price = parseInt(priceText.replace(/[^\d]/g, ''));
+        const name = card.querySelector("h3").textContent;
+        const priceText = card.querySelector(".price").textContent;
+        const price = parseInt(priceText.replace(/[^\d]/g, ""));
+        const id = button.dataset.id;
+        const type = button.dataset.type;
         
         const item = {
-            id: Date.now(),
+            id: id,
             name: name,
             price: price,
-            quantity: 1
+            quantity: 1,
+            type: type
         };
         
         addToCart(item);
@@ -75,7 +101,7 @@ function handleAddToCart(event) {
 // Add item to cart
 function addToCart(item) {
     // Check if item already exists
-    const existingItem = cart.find(cartItem => cartItem.name === item.name);
+    const existingItem = cart.find(cartItem => cartItem.id === item.id && cartItem.type === item.type);
     
     if (existingItem) {
         existingItem.quantity += 1;
@@ -88,7 +114,7 @@ function addToCart(item) {
     updateCartDisplay();
     
     // Show success message
-    showNotification(`تم إضافة ${item.name} إلى السلة!`, 'success');
+    showNotification(`تم إضافة ${item.name} إلى السلة!`, "success");
 }
 
 // Update cart total
@@ -98,14 +124,14 @@ function updateCartTotal() {
 
 // Save cart to localStorage
 function saveCartToStorage() {
-    localStorage.setItem('gamingStoreCart', JSON.stringify(cart));
-    localStorage.setItem('gamingStoreCartTotal', cartTotal.toString());
+    localStorage.setItem("gamingStoreCart", JSON.stringify(cart));
+    localStorage.setItem("gamingStoreCartTotal", cartTotal.toString());
 }
 
 // Load cart from localStorage
 function loadCartFromStorage() {
-    const savedCart = localStorage.getItem('gamingStoreCart');
-    const savedTotal = localStorage.getItem('gamingStoreCartTotal');
+    const savedCart = localStorage.getItem("gamingStoreCart");
+    const savedTotal = localStorage.getItem("gamingStoreCartTotal");
     
     if (savedCart) {
         cart = JSON.parse(savedCart);
@@ -118,13 +144,13 @@ function loadCartFromStorage() {
 
 // Update cart display
 function updateCartDisplay() {
-    const cartIcon = document.querySelector('.fa-shopping-cart');
+    const cartIcon = document.querySelector(".fa-shopping-cart"); // Assuming you have a cart icon
     if (cartIcon && cart.length > 0) {
         // Add cart count badge
         let badge = cartIcon.nextElementSibling;
-        if (!badge || !badge.classList.contains('cart-badge')) {
-            badge = document.createElement('span');
-            badge.classList.add('cart-badge');
+        if (!badge || !badge.classList.contains("cart-badge")) {
+            badge = document.createElement("span");
+            badge.classList.add("cart-badge");
             cartIcon.parentNode.insertBefore(badge, cartIcon.nextSibling);
         }
         badge.textContent = cart.length;
@@ -149,12 +175,13 @@ function updateCartDisplay() {
 // Show cart
 function showCart() {
     if (cart.length === 0) {
-        showNotification('السلة فارغة!', 'info');
+        showNotification("السلة فارغة!", "info");
         return;
     }
     
-    let cartHTML = '<div style="background: white; padding: 20px; border-radius: 10px; max-width: 400px;">';
-    cartHTML += '<h3 style="margin-bottom: 15px; color: #333;">سلة التسوق</h3>';
+    let cartHTML = 
+        `<div style="background: white; padding: 20px; border-radius: 10px; max-width: 400px;">
+            <h3 style="margin-bottom: 15px; color: #333;">سلة التسوق</h3>`;
     
     cart.forEach(item => {
         cartHTML += `
@@ -181,14 +208,14 @@ function showCart() {
             </button>
         </div>
     `;
-    cartHTML += '</div>';
+    cartHTML += `</div>`;
     
     showModal(cartHTML);
 }
 
 // Checkout function
 function checkout() {
-    showNotification('شكراً لك! سيتم التواصل معك قريباً لإتمام الطلب.', 'success');
+    showNotification("شكراً لك! سيتم التواصل معك قريباً لإتمام الطلب.", "success");
     cart = [];
     cartTotal = 0;
     saveCartToStorage();
@@ -199,38 +226,24 @@ function checkout() {
 // Handle smooth scrolling
 function handleSmoothScroll(event) {
     event.preventDefault();
-    const targetId = event.target.getAttribute('href');
+    const targetId = event.target.getAttribute("href");
     const targetSection = document.querySelector(targetId);
     
     if (targetSection) {
         targetSection.scrollIntoView({
-            behavior: 'smooth',
-            block: 'start'
+            behavior: "smooth",
+            block: "start"
         });
     }
 }
 
-// Handle search
-function handleSearch() {
-    const searchTerm = prompt('ابحث عن لعبة أو إكسسوار:');
-    if (searchTerm) {
-        showNotification(`البحث عن: ${searchTerm}`, 'info');
-        // Here you would implement actual search functionality
-    }
-}
-
-// Handle user login
-function handleUserLogin() {
-    showNotification('سيتم إضافة نظام تسجيل الدخول قريباً!', 'info');
-}
-
 // Scroll to games section
 function scrollToGames() {
-    const gamesSection = document.querySelector('#games');
+    const gamesSection = document.querySelector("#games");
     if (gamesSection) {
         gamesSection.scrollIntoView({
-            behavior: 'smooth',
-            block: 'start'
+            behavior: "smooth",
+            block: "start"
         });
     }
 }
@@ -238,23 +251,23 @@ function scrollToGames() {
 // Show add to cart animation
 function showAddToCartAnimation(button) {
     const originalText = button.textContent;
-    button.textContent = 'تم الإضافة ✓';
-    button.style.background = '#28a745';
+    button.textContent = "تم الإضافة ✓";
+    button.style.background = "#28a745";
     
     setTimeout(() => {
         button.textContent = originalText;
-        button.style.background = '';
+        button.style.background = "";
     }, 1500);
 }
 
 // Show notification
-function showNotification(message, type = 'info') {
-    const notification = document.createElement('div');
+function showNotification(message, type = "info") {
+    const notification = document.createElement("div");
     notification.style.cssText = `
         position: fixed;
         top: 100px;
         right: 20px;
-        background: ${type === 'success' ? '#28a745' : type === 'error' ? '#dc3545' : '#17a2b8'};
+        background: ${type === "success" ? "#28a745" : type === "error" ? "#dc3545" : "#17a2b8"};
         color: white;
         padding: 15px 20px;
         border-radius: 5px;
@@ -270,12 +283,12 @@ function showNotification(message, type = 'info') {
     
     // Animate in
     setTimeout(() => {
-        notification.style.transform = 'translateX(0)';
+        notification.style.transform = "translateX(0)";
     }, 100);
     
     // Remove after 3 seconds
     setTimeout(() => {
-        notification.style.transform = 'translateX(100%)';
+        notification.style.transform = "translateX(100%)";
         setTimeout(() => {
             document.body.removeChild(notification);
         }, 300);
@@ -284,7 +297,7 @@ function showNotification(message, type = 'info') {
 
 // Show modal
 function showModal(content) {
-    const modal = document.createElement('div');
+    const modal = document.createElement("div");
     modal.style.cssText = `
         position: fixed;
         top: 0;
@@ -305,11 +318,11 @@ function showModal(content) {
         </div>
     `;
     
-    modal.id = 'modal';
+    modal.id = "modal";
     document.body.appendChild(modal);
     
     // Close on background click
-    modal.addEventListener('click', (e) => {
+    modal.addEventListener("click", (e) => {
         if (e.target === modal) {
             closeModal();
         }
@@ -318,7 +331,7 @@ function showModal(content) {
 
 // Close modal
 function closeModal() {
-    const modal = document.getElementById('modal');
+    const modal = document.getElementById("modal");
     if (modal) {
         document.body.removeChild(modal);
     }
@@ -326,31 +339,31 @@ function closeModal() {
 
 // Scroll animations
 function animateOnScroll() {
-    const elements = document.querySelectorAll('.game-card, .accessory-card');
+    const elements = document.querySelectorAll(".product-card");
     
     elements.forEach(element => {
         const elementTop = element.getBoundingClientRect().top;
         const elementVisible = 150;
         
         if (elementTop < window.innerHeight - elementVisible) {
-            element.style.opacity = '1';
-            element.style.transform = 'translateY(0)';
+            element.style.opacity = "1";
+            element.style.transform = "translateY(0)";
         }
     });
 }
 
 // Initialize scroll animations
-window.addEventListener('scroll', animateOnScroll);
+window.addEventListener("scroll", animateOnScroll);
 
 // Initialize animations on load
-window.addEventListener('load', () => {
+window.addEventListener("load", () => {
     animateOnScroll();
 });
 
-// API Integration (for future backend connection)
-const API_BASE_URL = window.location.origin.includes('localhost') 
-    ? 'http://localhost:5000/api' 
-    : 'https://gaming-store.onrender.com/api';
+// API Integration
+const API_BASE_URL = window.location.origin.includes("localhost") 
+    ? "http://localhost:5000/api" 
+    : "https://gaming-store-00fk.onrender.com/api"; // Updated Render URL
 
 // Fetch games from backend
 async function fetchGames() {
@@ -361,9 +374,9 @@ async function fetchGames() {
             return games;
         }
     } catch (error) {
-        console.log('Backend not available, using static data');
+        console.error("Error fetching games:", error);
     }
-    return null;
+    return { success: false, games: [] };
 }
 
 // Fetch accessories from backend
@@ -375,18 +388,18 @@ async function fetchAccessories() {
             return accessories;
         }
     } catch (error) {
-        console.log('Backend not available, using static data');
+        console.error("Error fetching accessories:", error);
     }
-    return null;
+    return { success: false, accessories: [] };
 }
 
 // Submit order to backend
 async function submitOrder(orderData) {
     try {
         const response = await fetch(`${API_BASE_URL}/orders`, {
-            method: 'POST',
+            method: "POST",
             headers: {
-                'Content-Type': 'application/json',
+                "Content-Type": "application/json",
             },
             body: JSON.stringify(orderData)
         });
@@ -396,8 +409,10 @@ async function submitOrder(orderData) {
             return result;
         }
     } catch (error) {
-        console.log('Backend not available for order submission');
+        console.error("Error submitting order:", error);
     }
-    return null;
+    return { success: false, message: "Failed to submit order" };
 }
+
+
 

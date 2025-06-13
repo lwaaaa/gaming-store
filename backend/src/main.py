@@ -48,6 +48,8 @@ def serve(path):
 
     if path != "" and os.path.exists(os.path.join(static_folder_path, path)):
         return send_from_directory(static_folder_path, path)
+    elif path.startswith("static/") and os.path.exists(os.path.join(static_folder_path, path.replace("static/", ""))):
+        return send_from_directory(static_folder_path, path.replace("static/", ""))
     else:
         index_path = os.path.join(static_folder_path, 'index.html')
         if os.path.exists(index_path):
